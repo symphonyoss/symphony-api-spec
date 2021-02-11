@@ -1,6 +1,6 @@
 swagger: '2.0'
 info:
-  version: '20.10.0'
+  version: '20.11.0-SNAPSHOT'
   title: Agent API
   description: |
     This document refers to Symphony API calls to send and receive messages
@@ -150,8 +150,8 @@ paths:
       parameters:
         - name: showFirehoseErrors
           description: |
-            Flag to set if Firehose Service connectivity errors will show on Agent's healthcheck or not.
-            Default is "false", so no errors will show up if connectivity check isn't successful.
+            [deprecated] Firehose Service has never been deployed. However, this request parameter has been kept here
+            for specs backward compatibility.
           in: query
           required: false
           type: boolean
@@ -823,6 +823,11 @@ paths:
           in: formData
           type: string
           required: false
+        - name: isStateful
+          description: Optional boolean flag indicating if message is stateful or not, for VSM feature.
+          in: formData
+          type: string
+          required: false
         - name: attachment
           description: Optional file attachment.
           in: formData
@@ -841,6 +846,141 @@ paths:
           description: Message sent.
           schema:
             $ref: '#/definitions/V4Message'
+        '400':
+          description: 'Client error, see response body for further details.'
+          schema:
+            $ref: '#/definitions/V2Error'
+        '401':
+          description: 'Unauthorized: Session tokens invalid.'
+          schema:
+            $ref: '#/definitions/V2Error'
+        '403':
+          description: 'Forbidden: Caller lacks necessary entitlement.'
+          schema:
+            $ref: '#/definitions/V2Error'
+        '451':
+          description: 'Compliance Issues found in message or file'
+          schema:
+            $ref: '#/definitions/V2Error'
+        '500':
+          description: 'Server error, see response body for further details.'
+          schema:
+            $ref: '#/definitions/V2Error'
+  '/v4/stream/{sid}/message/{mid}/facet/create':
+    post:
+      summary: Post a facet on top of one existing message.
+      description: |
+        Post a new facet to the given stream and message. The stream can be a chatroom,
+        an IM or a multiparty IM. The message has to be a stateful social message.
+      consumes:
+        - multipart/form-data
+      produces:
+        - application/json
+      parameters:
+        - name: sid
+          description: Stream ID
+          in: path
+          required: true
+          type: string
+        - name: mid
+          description: Message ID
+          in: path
+          required: true
+          type: string
+        - name: sessionToken
+          description: Authorization token used to make delegated calls.
+          in: header
+          required: true
+          type: string
+        - name: keyManagerToken
+          description: Key Manager authentication token.
+          in: header
+          type: string
+          required: false
+        - name: message
+          description: The message payload in MessageML.
+          in: formData
+          type: string
+          required: false
+        - name: data
+          description: Optional message data in EntityJSON.
+          in: formData
+          type: string
+          required: false
+        - name: directedTo
+          description: Comma-separated list of users where the facet will be sent.
+          in: formData
+          type: string
+          required: false
+      tags:
+        - Messages
+      responses:
+        '200':
+          description: Facet sent.
+          schema:
+            $ref: '#/definitions/V4MessageState'
+        '400':
+          description: 'Client error, see response body for further details.'
+          schema:
+            $ref: '#/definitions/V2Error'
+        '401':
+          description: 'Unauthorized: Session tokens invalid.'
+          schema:
+            $ref: '#/definitions/V2Error'
+        '403':
+          description: 'Forbidden: Caller lacks necessary entitlement.'
+          schema:
+            $ref: '#/definitions/V2Error'
+        '451':
+          description: 'Compliance Issues found in message or file'
+          schema:
+            $ref: '#/definitions/V2Error'
+        '500':
+          description: 'Server error, see response body for further details.'
+          schema:
+            $ref: '#/definitions/V2Error'
+  '/v4/message/{mid}/facet':
+    get:
+      summary: Read facets on top of one existing message.
+      description: |
+        Read all facets of the given stream and message. The stream can be a chatroom,
+        an IM or a multiparty IM. The message has to be a stateful social message.
+      produces:
+        - application/json
+      parameters:
+        - name: mid
+          description: Message ID
+          in: path
+          required: true
+          type: string
+        - name: toUserid
+          description: Directed to field in VSM message.
+          in: query
+          required: false
+          type: integer
+        - name: sortDir
+          description: Messages sort direction, ASC or DESC (default to DESC).
+          in: query
+          required: false
+          type: string
+          enum: [ASC, DESC]
+        - name: sessionToken
+          description: Authorization token used to make delegated calls.
+          in: header
+          required: true
+          type: string
+        - name: keyManagerToken
+          description: Key Manager authentication token.
+          in: header
+          type: string
+          required: false
+      tags:
+        - Messages
+      responses:
+        '200':
+          description: OK.
+          schema:
+            $ref: '#/definitions/V4MessageStateList'
         '400':
           description: 'Client error, see response body for further details.'
           schema:
@@ -3772,6 +3912,12 @@ definitions:
       messageId:
         type: string
         description: Id of the message
+      stateful:
+        type: boolean
+        description: true for VSM messages, otherwise false
+      facetId:
+        type: string
+        description: Id of the facet, if VSM message
       timestamp:
         type: integer
         format: int64
@@ -3839,6 +3985,47 @@ definitions:
         description: List of streams where the messages ingestion has failed
         additionalProperties:
           $ref: '#/definitions/Error'
+  V4MessageState:
+    type: object
+    description: A representation of a message sent by a user of Symphony
+    properties:
+      id:
+        type: string
+        description: Id of the state
+      messageId:
+        type: string
+        description: Id of the social message
+      streamId:
+        type: string
+        description: Id of stream
+      timestamp:
+        type: integer
+        format: int64
+        description: Timestamp of the state in milliseconds since Jan 1 1970
+      type:
+        type: string
+        enum: [ FACET ]
+        description: Type of the state
+      directedTo:
+        type: array
+        items:
+          type: integer
+          format: int64
+        description: List of users to which the facet has been delivered. Empty or null means all users currently members of the stream.
+      facet:
+        type: object
+        properties:
+          presentationML:
+            type: string
+            description: Facet content
+          entityJson:
+            type: string
+            format: JSON
+            description: Facet data
+  V4MessageStateList:
+    type: array
+    items:
+      $ref: '#/definitions/V4MessageState'
   V4User:
     type: object
     properties:
@@ -4033,6 +4220,9 @@ definitions:
         $ref: '#/definitions/V4Stream'
       formMessageId:
         description: "The id of the message that contains the Form"
+        type: string
+      formFacetId:
+        description: "The id of the facet that contains the Form, if the message is a VSM"
         type: string
       formId:
         description: "The id of the Form element"
