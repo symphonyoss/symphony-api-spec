@@ -5344,12 +5344,12 @@ definitions:
       modifiedDate:
         type: integer
         format: int64
-  Product:
+  
+  :
     description: Application Product
     type: object
     required:
       - name
-      - sku
       - type
       - subscribed
     properties:
